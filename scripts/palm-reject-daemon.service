@@ -1,0 +1,25 @@
+[Unit]
+Description=Palm Rejection Daemon for ASUS Zenbook Duo
+Documentation=https://github.com/artonio/zenbook-duo-palm-rejection
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/palm-reject-daemon run
+Restart=on-failure
+RestartSec=5
+# Run as root to access input devices
+User=root
+Group=root
+# Set environment variable for logging
+Environment=LOG_LEVEL=info
+# Timeout settings
+TimeoutStartSec=30
+TimeoutStopSec=10
+
+# Security settings - minimal for input device access
+DeviceAllow=char-input rw
+SupplementaryGroups=input
+
+[Install]
+WantedBy=multi-user.target

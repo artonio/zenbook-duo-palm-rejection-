@@ -2,6 +2,13 @@
 
 A lightweight system daemon that automatically disables the touchpad while typing to prevent accidental cursor movements (palm rejection).
 
+## ⚠️ Current Limitations
+
+- **Keyboard Support**: Only works with the built-in keyboard attached to the Zenbook Duo
+- **No Bluetooth Support**: Does not support Bluetooth keyboards
+- **Hot-Plugging**: Detaching and re-attaching the keyboard does not automatically restart the daemon - manual restart required
+- **Hard-coded Cooldown**: 300ms cooldown period is not configurable
+
 ## Features
 
 - **Automatic palm rejection** - Disables touchpad while typing

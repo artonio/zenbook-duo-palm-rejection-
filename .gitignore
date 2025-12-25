@@ -18,7 +18,6 @@
 go.work
 
 # Binary output
-/palm-reject-daemon
 bin/
 
 # IDE specific files

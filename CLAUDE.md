@@ -10,11 +10,55 @@ This project was developed using Claude Code Router with the model: **moonshotai
 
 A Go-based daemon for ASUS ZenBook Duo that implements palm rejection by disabling the touchpad while typing. The system monitors keyboard input and temporarily disables touchpad input to prevent accidental cursor movement.
 
+## Architecture
+
+### Core Components
+
+1. **Device Discovery** (`internal/touchpad/`)
+   - `FindAllTouchpadDevices()` - Locates all touchpad devices (Zenbook Duo has 3)
+   - `FindKeyboardDevice()` - Finds the primary keyboard device
+   - `MultiController` - Manages multiple touchpad devices simultaneously
+   - `KeyboardMonitor` - Monitors keyboard input events via evdev
+
+2. **Event System** (`internal/events/`)
+   - `SystemEventBus` - Broadcast pattern for system-wide events
+   - Used for inter-component communication
+
+3. **Typing Detection** (`internal/consumer/`)
+   - `TypingDetectionConsumer` - Core logic that disables touchpad on keypress
+   - 300ms hard-coded cooldown period
+   - Thread-safe with mutex protection
+
+4. **Inter-Process Communication** (`internal/pipe/`)
+   - Unix pipe receiver for external commands
+   - Default pipe path: `/tmp/zenbook-duo-daemon.pipe`
+   - Commands: `touchpad_disable`, `touchpad_enable`, `touchpad_toggle`
+
+5. **Logging** (`pkg/logging/`)
+   - Structured logging with zerolog
+   - Log level controlled via `LOG_LEVEL` environment variable
+   - Levels: trace, debug, info, warn, error, fatal
+
+### Data Flow
+
+1. Daemon starts and discovers touchpad/keyboard devices via evdev
+2. Keyboard monitor captures keypress events
+3. Typing detection consumer receives events and disables all touchpads
+4. Touchpads remain disabled for cooldown period (300ms)
+5. System handles graceful shutdown on SIGINT/SIGTERM
+
 ## Development Commands
 
 ### Build
 ```bash
-go build -o palm-reject-daemon cmd/palm-reject-daemon/main.go
+# Quick build
+go build -o palm-reject-daemon ./cmd/palm-reject-daemon
+
+# Using build script (recommended)
+./scripts/build.sh
+
+# Build with race detector for testing
+./scripts/build.sh --race
 ```
 
 ### Run
@@ -22,63 +66,82 @@ go build -o palm-reject-daemon cmd/palm-reject-daemon/main.go
 # Run the daemon
 ./palm-reject-daemon run
 
-# Run with custom log level
+# Run with debug logging
 LOG_LEVEL=debug ./palm-reject-daemon run
+
+# Run with timeout for safe testing
+./scripts/run.sh --timeout 10s
+
+# Run without timeout (indefinitely)
+./scripts/run.sh --timeout 0
 ```
 
-### Test
-No test files currently exist in the project.
+### Systemd Service Management
+```bash
+# Install as system service
+sudo ./scripts/install-systemd.sh
+
+# Check status
+systemctl status palm-reject-daemon
+
+# View logs
+journalctl -u palm-reject-daemon -f
+
+# Restart daemon
+sudo systemctl restart palm-reject-daemon
+# OR
+./scripts/daemon-manager.sh restart
+```
 
 ### Dependencies
 ```bash
+# Download dependencies
 go mod download
+
+# Tidy dependencies
 go mod tidy
 ```
 
-## Architecture
+## Important Limitations
 
-### Core Components
+- **Keyboard Support**: Only works with the built-in keyboard attached to the Zenbook Duo
+- **No Bluetooth Support**: Does not support Bluetooth keyboards
+- **Hot-Plugging**: Detaching and re-attaching the keyboard does not automatically restart the daemon
+- **Hard-coded Cooldown**: 300ms cooldown period is not configurable
 
-1. **Device Discovery** (`internal/touchpad` - missing implementation)
-   - `touchpad.FindAllTouchpadDevices()` - Locates all touchpad devices
-   - `touchpad.FindKeyboardDevice()` - Finds the primary keyboard device
-   - `touchpad.NewMultiController()` - Manages multiple touchpad devices
-   - `touchpad.NewKeyboardMonitor()` - Monitors keyboard input events
+## Key Technical Details
 
-2. **Event System** (`internal/events/`)
-   - `KeyPressEventBus` - Handles keyboard event distribution
-   - `SystemEventBus` - Manages system-wide events for component communication
+- **Root Required**: Must run as root to access input devices via evdev
+- **Multi-touchpad**: Supports all 3 touchpads found on Zenbook Duo
+- **Memory Usage**: ~6MB RAM when running
+- **Binary Location**: Installs to `/usr/local/bin/palm-reject-daemon`
+- **Service File**: `/etc/systemd/system/palm-reject-daemon.service`
 
-3. **Typing Detection** (`internal/consumer/typing_detection.go`)
-   - `TypingDetectionConsumer` - Core logic that disables touchpad on keypress
-   - Configurable cooldown period (default: 300ms)
-   - Thread-safe implementation with mutex protection
+## Common Development Tasks
 
-4. **Inter-Process Communication** (`internal/pipe/`)
-   - Unix pipe receiver for external commands
-   - Default pipe path: `/tmp/palm-reject-daemon.sock`
+### Testing Device Discovery
+```bash
+# Check what devices are found
+sudo LOG_LEVEL=debug ./bin/palm-reject-daemon run --timeout 10s
+```
 
-5. **Logging** (`pkg/logging/logging.go`)
-   - Structured logging with zerolog
-   - Log level controlled via `LOG_LEVEL` environment variable
-   - Supports levels: trace, debug, info, warn, error, fatal
+### Manual Touchpad Control
+```bash
+# Disable touchpad
+echo "touchpad_disable" > /tmp/zenbook-duo-daemon.pipe
 
-### Data Flow
+# Enable touchpad
+echo "touchpad_enable" > /tmp/zenbook-duo-daemon.pipe
 
-1. Daemon starts and discovers touchpad/keyboard devices
-2. Keyboard monitor captures keypress events
-3. Typing detection consumer receives events and disables touchpad
-4. Touchpad remains disabled for cooldown period (default 300ms)
-5. System handles graceful shutdown on SIGINT/SIGTERM
+# Toggle touchpad
+echo "touchpad_toggle" > /tmp/zenbook-duo-daemon.pipe
+```
 
-### Missing Components
+### Debugging
+```bash
+# View recent logs
+journalctl -u palm-reject-daemon --no-pager -n 20
 
-The following components are referenced but not implemented:
-- `internal/touchpad` package (device discovery and control)
-- Test files
-- Build configuration (Makefile)
-- Documentation (README.md)
-
-## Environment Variables
-
-- `LOG_LEVEL`: Controls logging verbosity (default: "info")
+# Check if service is active
+systemctl is-active palm-reject-daemon
+```
